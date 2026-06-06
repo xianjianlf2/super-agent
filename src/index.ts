@@ -1,18 +1,8 @@
-import 'dotenv/config';
 import { streamText, stepCountIs, type ModelMessage } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createMockModel } from './mock-model';
+import { model, useReal } from './model';
 import { tools } from './tools';
 import * as readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-
-const qwen = createOpenAI({
-  baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  apiKey: process.env.DASHSCOPE_API_KEY,
-});
-
-const useReal = !!process.env.DASHSCOPE_API_KEY;
-const model = useReal ? qwen.chat('qwen-plus-latest') : createMockModel();
 
 async function main() {
   const rl = readline.createInterface({ input: stdin, output: stdout });
