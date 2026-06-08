@@ -9,11 +9,14 @@
 	"devDependencies": {
 		"@types/node": "^25.9.1",
 		"tsx": "^4.22.4",
-		"typescript": "^6.0.3"
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.8"
 	},
 	"scripts": {
 		"dev": "tsx watch src/index.ts",
 		"start": "tsx src/index.ts",
-		"compare": "tsx src/compare-loops.ts"
+		"compare": "tsx src/compare-loops.ts",
+		"test": "vitest run",
+		"test:watch": "vitest"
 	}
 }

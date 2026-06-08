@@ -1,7 +1,16 @@
+import { ToolRegistry } from './registry';
 import { weatherTool, calculatorTool } from './utility-tools';
+import { readFileTool, writeFileTool, listDirectoryTool } from './file-tools';
 
-// 传给 streamText 的工具集合：key 就是模型看到的工具名
-export const tools = {
-  get_weather: weatherTool,
-  calculator: calculatorTool,
-};
+export { ToolRegistry } from './registry';
+export type { ToolDefinition } from './registry';
+export { truncateResult } from './registry';
+
+export const allTools = [
+  weatherTool, calculatorTool, readFileTool, writeFileTool, listDirectoryTool,
+];
+
+// Backward compat for compare-loops.ts (uses AI SDK generateText directly)
+const legacyRegistry = new ToolRegistry();
+legacyRegistry.register(weatherTool, calculatorTool);
+export const tools = legacyRegistry.toAISDKFormat();

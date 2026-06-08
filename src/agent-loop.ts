@@ -1,6 +1,7 @@
 import { streamText, type ModelMessage } from 'ai';
 import { detect, recordCall, recordResult, resetHistory } from './loop-detection';
 import { isRetryable, calculateDelay, sleep } from './retry';
+import type { ToolRegistry } from './tools';
 
 const MAX_STEPS = 15;   // 代码层的硬上限：兜住 while(true) 这种纯结构性死循环
 const MAX_RETRIES = 3;  // 单步最多重试次数
@@ -14,13 +15,14 @@ export interface BudgetState {
 
 export async function agentLoop(
   model: any,
-  tools: any,
+  registry: ToolRegistry,
   messages: ModelMessage[],
   system: string,
   budget: BudgetState,
 ) {
   let step = 0;
-  resetHistory(); // 循环检测窗口按“单次 query”清空
+  resetHistory(); // 循环检测窗口按”单次 query”清空
+  const tools = registry.toAISDKFormat(); // 每次 agentLoop 调用缓存一次，避免每步重复构建
 
   while (step < MAX_STEPS) {
     step++;
@@ -76,12 +78,15 @@ export async function agentLoop(
               break;
             }
 
-            case 'tool-result':
-              console.log(`  [结果: ${JSON.stringify(part.output)}]`);
+            case 'tool-result': {
+              const text = typeof part.output === 'string' ? part.output : JSON.stringify(part.output);
+              const preview = text.length > 200 ? text.slice(0, 200) + '…' : text;
+              console.log(`  [结果: ${part.toolName}] ${preview}`);
               if (lastToolCall) {
                 recordResult(lastToolCall.name, lastToolCall.input, part.output);
               }
               break;
+            }
           }
         }
 
