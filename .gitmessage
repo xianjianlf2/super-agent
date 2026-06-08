@@ -1,0 +1,17 @@
+# <type>(<scope>): <subject>
+#
+# type:
+#   feat     新功能
+#   fix      修复 bug
+#   docs     文档变更
+#   refactor 重构（不涉及功能或 bug）
+#   test     测试相关
+#   chore    构建/依赖/配置
+#
+# scope（可选）：影响范围，例如 agent-loop / tools / registry
+#
+# subject：50 字以内，动词开头，不加句号
+#
+# ── Body（可选）────────────────────────────────────────────
+# 解释 Why，不解释 What（What 代码本身已经说明）
+# 每行不超过 72 字符
