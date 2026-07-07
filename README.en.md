@@ -28,7 +28,7 @@ pnpm test       # run unit tests
 | Ch 5 | Three-layer guard | Loop detection + API retry + token budget circuit breaker | `e2d6201` |
 | Ch 6 | Tool system | ToolRegistry + result truncation + reader-writer lock | `25fd247` |
 | Ch 7 | Three real demos | `fetch_url` + `start_preview`; assemble code-analysis / Research / Vibe Coding from existing tools | `a3408ca` |
-| Ch 8 | MCP integration | Hand-written MCP Client (JSON-RPC over stdio) wiring up GitHub; namespace isolation + three-tier fallback | `(TBD)` |
+| Ch 8 | MCP integration | Hand-written MCP Client (JSON-RPC over stdio) wiring up GitHub; namespace isolation + three-tier fallback | `66dff00` |
 
 > Key insight: the model is stateless — it only decides which tool to call. Memory = resending full history each turn. Execution = your `execute` function. Looping = your `while` loop.
 

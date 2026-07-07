@@ -28,7 +28,7 @@ pnpm test       # 运行单元测试
 | 第 5 章 | 三层防护 | 循环检测 + API 重试 + Token 预算熔断 | `e2d6201` |
 | 第 6 章 | 工具系统 | ToolRegistry + 结果截断 + 读写锁并发控制 | `25fd247` |
 | 第 7 章 | 三个实战 demo | `fetch_url` + `start_preview`，用现有工具组装代码分析 / Research / Vibe Coding | `a3408ca` |
-| 第 8 章 | MCP 接入 | 手写 MCP Client（JSON-RPC over stdio）接入 GitHub，命名空间隔离 + 三层降级 | `(待填)` |
+| 第 8 章 | MCP 接入 | 手写 MCP Client（JSON-RPC over stdio）接入 GitHub，命名空间隔离 + 三层降级 | `66dff00` |
 
 > 核心理解：模型本身无状态，只负责"决定调用哪个工具"；记忆 = 每次重发完整历史，执行 = 你代码里的 `execute`，循环 = 你写的 `while`。
 
