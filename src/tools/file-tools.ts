@@ -157,13 +157,20 @@ export const searchFilesTool: ToolDefinition = {
 
 const MAX_GREP_MATCHES = 100;
 
-// 粗判二进制：读前 512 字节，出现 \0 即认为是二进制
+// 粗判二进制：读前 512 字节，出现 \0 即认为是二进制。
+// 打不开或读不了（目录、无权限）时按“二进制”处理，让调用方跳过该项。
 function isBinary(path: string): boolean {
-  const buf = Buffer.alloc(512);
-  const fd = openSync(path, 'r');
-  const read = readSync(fd, buf, 0, 512, 0);
-  closeSync(fd);
-  return buf.subarray(0, read).includes(0);
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, 'r');
+    const buf = Buffer.alloc(512);
+    const read = readSync(fd, buf, 0, 512, 0);
+    return buf.subarray(0, read).includes(0);
+  } catch {
+    return true;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 export const grepFilesTool: ToolDefinition = {
@@ -197,7 +204,14 @@ export const grepFilesTool: ToolDefinition = {
     for (const file of files) {
       if (isBinary(file)) continue;
       const rel = relative(root, file);
-      const content = readFileSync(file, 'utf-8');
+      // glob 可能匹配到目录（如 src/**/* 命中 src/tools），或遇到无权限文件；
+      // 读失败时跳过该项，避免整个 grep 因单个条目抛错而中断。
+      let content: string;
+      try {
+        content = readFileSync(file, 'utf-8');
+      } catch {
+        continue;
+      }
       for (const [i, line] of content.split('\n').entries()) {
         if (line.toLowerCase().includes(needle)) {
           lines.push(`${rel}:${i + 1}: ${line.trimEnd()}`);
