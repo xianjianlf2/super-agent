@@ -27,7 +27,7 @@ pnpm test       # run unit tests
 | Ch 4 | Auto vs manual loop | `stopWhen` auto-loop ≈ a hand-written `while` loop | `f3c45c6` |
 | Ch 5 | Three-layer guard | Loop detection + API retry + token budget circuit breaker | `e2d6201` |
 | Ch 6 | Tool system | ToolRegistry + result truncation + reader-writer lock | `25fd247` |
-| Ch 7 | Three real demos | `fetch_url` + `start_preview`; assemble code-analysis / Research / Vibe Coding from existing tools | `TBD` |
+| Ch 7 | Three real demos | `fetch_url` + `start_preview`; assemble code-analysis / Research / Vibe Coding from existing tools | `a3408ca` |
 
 > Key insight: the model is stateless — it only decides which tool to call. Memory = resending full history each turn. Execution = your `execute` function. Looping = your `while` loop.
 
