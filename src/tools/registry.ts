@@ -1,4 +1,5 @@
 import { jsonSchema } from 'ai';
+import type { IMCPClient } from './mcp-client';
 
 // ToolDefinition 把两类信息合并在一个接口里：
 // - 模型层（name/description/parameters）：AI SDK 需要，决定模型怎么调用这个工具
@@ -28,10 +29,53 @@ export class ToolRegistry {
   private concurrentCount = 0;
   private waitQueue: Array<() => void> = [];
 
+  // 已连接的 MCP Client，进程退出时统一 close。
+  private mcpClients: IMCPClient[] = [];
+
   register(...tools: ToolDefinition[]): void {
     for (const tool of tools) {
       this.tools.set(tool.name, tool);
     }
+  }
+
+  // 连接一个 MCP Server，发现它暴露的工具，逐个注册进 Registry。
+  // 注册完成后，MCP 工具和内置工具走完全相同的截断 + 并发管线，Agent Loop 无需区分来源。
+  async registerMCPServer(serverName: string, client: IMCPClient): Promise<string[]> {
+    await client.connect();
+    this.mcpClients.push(client);
+
+    const tools = await client.listTools();
+    const registered: string[] = [];
+
+    for (const tool of tools) {
+      // 命名空间前缀 mcp__<server>__<tool>：避免不同 Server 同名工具互相覆盖，
+      // 模型看到前缀也能一眼识别这是外部工具（Claude Code 用的同一方案）。
+      const prefixedName = `mcp__${serverName}__${tool.name}`;
+      if (this.tools.has(prefixedName)) continue;
+
+      const originalName = tool.name;
+      this.register({
+        name: prefixedName,
+        // [MCP:xxx] 前缀是给调试看的：结果不对时，一眼分辨是内置工具还是 MCP Server 的问题。
+        description: `[MCP:${serverName}] ${tool.description}`,
+        parameters: tool.inputSchema,
+        isConcurrencySafe: true, // MCP 工具通常是无状态 API 调用，天然可并发（写操作需另行标 false）
+        isReadOnly: true,
+        maxResultChars: 3000,
+        // execute 是个闭包，调用时通过 JSON-RPC 转发给 Server。
+        execute: async (input: any) => client.callTool(originalName, input),
+      });
+      registered.push(prefixedName);
+    }
+
+    return registered;
+  }
+
+  async closeAllMCP(): Promise<void> {
+    for (const client of this.mcpClients) {
+      await client.close();
+    }
+    this.mcpClients = [];
   }
 
   get(name: string): ToolDefinition | undefined {
