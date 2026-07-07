@@ -27,6 +27,7 @@ pnpm test       # 运行单元测试
 | 第 4 章 | 自动 vs 手动循环 | `stopWhen` 自动循环 ≈ 手写 `while` 的封装 | `f3c45c6` |
 | 第 5 章 | 三层防护 | 循环检测 + API 重试 + Token 预算熔断 | `e2d6201` |
 | 第 6 章 | 工具系统 | ToolRegistry + 结果截断 + 读写锁并发控制 | `25fd247` |
+| 第 7 章 | 三个实战 demo | `fetch_url` + `start_preview`，用现有工具组装代码分析 / Research / Vibe Coding | `TBD` |
 
 > 核心理解：模型本身无状态，只负责"决定调用哪个工具"；记忆 = 每次重发完整历史，执行 = 你代码里的 `execute`，循环 = 你写的 `while`。
 
@@ -42,9 +43,12 @@ src/
   retry.ts            # 重试策略与退避延迟
   compare-loops.ts    # 自动 vs 手动循环对比 demo
   tools/
-    index.ts          # 汇总导出
-    registry.ts       # ToolRegistry + 读写锁 + 结果截断
-    utility-tools.ts  # weather / calculator 工具
-    file-tools.ts     # read_file / write_file / list_directory
-    registry.test.ts  # Vitest 单元测试
+    index.ts              # 汇总导出 + allTools 注册
+    registry.ts           # ToolRegistry + 读写锁 + 结果截断
+    utility-tools.ts      # weather / calculator / fetch_url / start_preview
+    file-tools.ts         # read_file / write_file / edit_file / glob / grep / list_directory
+    bash-tools.ts         # bash 命令执行
+    *.test.ts             # Vitest 单元测试
+app/                  # 第 7 章旗舰 demo：浏览器直跑 TSX（start_preview 默认服务）
+demos/                # 另外两个网页 demo 样例（vibe-todo / landing）
 ```

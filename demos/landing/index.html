@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Agent Demo</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Super Agent</h1>
+    <p class="subtitle">Vibe Coding Demo — Agent 写完文件后即时预览</p>
+    <div class="card">
+      <h2>工具列表</h2>
+      <ul id="tool-list">
+        <li>get_weather</li>
+        <li>calculator</li>
+        <li>fetch_url</li>
+        <li>start_preview</li>
+        <li>read_file / write_file / edit_file</li>
+        <li>glob / search_files / grep / list_directory</li>
+        <li>bash</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>试一试</h2>
+      <p>在终端运行 <code>pnpm start</code>，然后对 Agent 说：</p>
+      <blockquote>帮我启动预览服务器，把 app/ 目录暴露到 8080</blockquote>
+    </div>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

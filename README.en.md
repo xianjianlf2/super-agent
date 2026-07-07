@@ -27,6 +27,7 @@ pnpm test       # run unit tests
 | Ch 4 | Auto vs manual loop | `stopWhen` auto-loop ≈ a hand-written `while` loop | `f3c45c6` |
 | Ch 5 | Three-layer guard | Loop detection + API retry + token budget circuit breaker | `e2d6201` |
 | Ch 6 | Tool system | ToolRegistry + result truncation + reader-writer lock | `25fd247` |
+| Ch 7 | Three real demos | `fetch_url` + `start_preview`; assemble code-analysis / Research / Vibe Coding from existing tools | `TBD` |
 
 > Key insight: the model is stateless — it only decides which tool to call. Memory = resending full history each turn. Execution = your `execute` function. Looping = your `while` loop.
 
@@ -42,9 +43,12 @@ src/
   retry.ts            # retry strategy with exponential backoff
   compare-loops.ts    # auto vs manual loop comparison demo
   tools/
-    index.ts          # barrel export
-    registry.ts       # ToolRegistry + reader-writer lock + truncation
-    utility-tools.ts  # weather / calculator tools
-    file-tools.ts     # read_file / write_file / list_directory
-    registry.test.ts  # Vitest unit tests
+    index.ts              # barrel export + allTools registration
+    registry.ts           # ToolRegistry + reader-writer lock + truncation
+    utility-tools.ts      # weather / calculator / fetch_url / start_preview
+    file-tools.ts         # read_file / write_file / edit_file / glob / grep / list_directory
+    bash-tools.ts         # bash command execution
+    *.test.ts             # Vitest unit tests
+app/                  # Ch 7 flagship demo: run TSX in the browser (served by start_preview)
+demos/                # two more web demo samples (vibe-todo / landing)
 ```

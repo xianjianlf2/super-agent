@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>浏览器直跑 TSX — 无 build demo</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      font-family: -apple-system, "Segoe UI", "PingFang SC", system-ui, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #1a1a2e;
+    }
+    #root { width: 100%; max-width: 520px; padding: 24px; }
+    .wrap {
+      background: rgba(255, 255, 255, 0.96);
+      border-radius: 20px; padding: 32px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    }
+    h1 { margin: 0 0 6px; font-size: 24px; }
+    .sub { margin: 0 0 24px; color: #6b6b83; font-size: 13px; line-height: 1.6; }
+    .counter {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px; margin-bottom: 14px;
+      background: #f4f5fb; border-radius: 14px;
+    }
+    .label { font-weight: 600; font-size: 15px; }
+    .controls { display: flex; align-items: center; gap: 12px; }
+    .controls button {
+      width: 40px; height: 40px; border: none; border-radius: 10px;
+      font-size: 20px; cursor: pointer; color: #fff;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      transition: transform .1s ease;
+    }
+    .controls button:active { transform: scale(0.9); }
+    .controls output {
+      min-width: 44px; text-align: center;
+      font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    .foot { margin: 18px 0 0; font-size: 12px; color: #9a9ab0; line-height: 1.6; }
+    pre { white-space: pre-wrap; }
+  </style>
+
+  <!-- 第一层：importmap —— 浏览器原生特性，把 bare specifier 解析到 esm.sh 的免构建 ES module -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+      "react-dom": "https://esm.sh/react-dom@18.3.1",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1"
+    }
+  }
+  </script>
+
+  <!-- 第二层：Babel Standalone —— 运行时把 TSX 翻译成浏览器能跑的 ES module -->
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+</head>
+<body>
+  <div id="root">加载中…</div>
+
+  <!-- 第三层：手写小型加载器 —— fetch .tsx → Babel 编译 → 递归处理相对 import → Blob URL → 动态 import -->
+  <script>
+    (async () => {
+      // 缓存 绝对URL -> Promise<blobURL>：同一模块只编译一次，天然支持菱形依赖、避免重复编译
+      const cache = new Map();
+      // 匹配相对 import/export（./ 或 ../ 开头）；bare specifier（如 react）不匹配，留给 importmap
+      const RELATIVE = /((?:import|export)\s[^'"]*?from\s*|import\s*)(["'])(\.\.?\/[^"']+)(\2)/g;
+
+      function compile(url) {
+        if (cache.has(url)) return cache.get(url);
+        const task = (async () => {
+          const src = await (await fetch(url)).text();
+          // filename 让 preset-typescript 依扩展名判断是否 TSX；presets 逆序执行：先 typescript 剥类型，再 react 转 JSX
+          const out = Babel.transform(src, {
+            filename: url,
+            presets: [['react', { runtime: 'automatic' }], 'typescript'],
+          }).code;
+
+          // 收集所有相对依赖
+          const specs = new Set();
+          let m;
+          while ((m = RELATIVE.exec(out)) !== null) specs.add(m[3]);
+
+          // 递归编译每个被引用的文件，拿到各自的 Blob URL
+          const rewrite = {};
+          for (const spec of specs) {
+            rewrite[spec] = await compile(new URL(spec, url).href);
+          }
+
+          // 把相对路径替换成 Blob URL，浏览器即可原生加载
+          const finalCode = out.replace(RELATIVE,
+            (full, head, q, spec) => head + q + rewrite[spec] + q);
+
+          const blob = new Blob([finalCode], { type: 'application/javascript' });
+          return URL.createObjectURL(blob);
+        })();
+        cache.set(url, task);
+        return task;
+      }
+
+      try {
+        const entry = await compile(new URL('./App.tsx', location.href).href);
+        await import(entry); // 动态 import 入口模块，触发 React 渲染
+      } catch (err) {
+        document.getElementById('root').innerHTML =
+          '<pre style="color:#c0392b">加载失败：' + (err && err.message || err) + '</pre>';
+        console.error(err);
+      }
+    })();
+  </script>
+</body>
+</html>
