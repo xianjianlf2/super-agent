@@ -22,10 +22,11 @@ export async function agentLoop(
 ) {
   let step = 0;
   resetHistory(); // 循环检测窗口按”单次 query”清空
-  const tools = registry.toAISDKFormat(); // 每次 agentLoop 调用缓存一次，避免每步重复构建
 
   while (step < MAX_STEPS) {
     step++;
+    // 每步重建工具表：tool_search 激活 deferred 工具后，下一步就能直接调用（构建成本可忽略）
+    const tools = registry.toAISDKFormat();
     console.log(`\n--- Step ${step} ---`);
 
     let hasToolCall = false;

@@ -11,6 +11,7 @@ export interface ToolDefinition {
   isConcurrencySafe?: boolean; // true = 只读，可与其他只读工具并行；false = 有副作用，独占执行
   isReadOnly?: boolean;
   maxResultChars?: number;     // 结果超出此长度时触发 Head/Tail 截断，防止撑爆上下文
+  deferred?: boolean;          // true = 延迟加载：schema 不进初始工具表，需经 tool_search 激活
   execute: (input: any) => Promise<unknown>;
 }
 
@@ -32,6 +33,10 @@ export class ToolRegistry {
   // 已连接的 MCP Client，进程退出时统一 close。
   private mcpClients: IMCPClient[] = [];
 
+  // 被 tool_search 激活的 deferred 工具。激活状态跟着 registry 走：
+  // 一次会话里搜过的工具，后续每轮都直接可用，不用重复搜。
+  private activated = new Set<string>();
+
   register(...tools: ToolDefinition[]): void {
     for (const tool of tools) {
       this.tools.set(tool.name, tool);
@@ -40,7 +45,11 @@ export class ToolRegistry {
 
   // 连接一个 MCP Server，发现它暴露的工具，逐个注册进 Registry。
   // 注册完成后，MCP 工具和内置工具走完全相同的截断 + 并发管线，Agent Loop 无需区分来源。
-  async registerMCPServer(serverName: string, client: IMCPClient): Promise<string[]> {
+  async registerMCPServer(
+    serverName: string,
+    client: IMCPClient,
+    options: { deferred?: boolean } = {},
+  ): Promise<string[]> {
     await client.connect();
     this.mcpClients.push(client);
 
@@ -62,6 +71,7 @@ export class ToolRegistry {
         isConcurrencySafe: true, // MCP 工具通常是无状态 API 调用，天然可并发（写操作需另行标 false）
         isReadOnly: true,
         maxResultChars: 3000,
+        deferred: options.deferred,
         // execute 是个闭包，调用时通过 JSON-RPC 转发给 Server。
         execute: async (input: any) => client.callTool(originalName, input),
       });
@@ -84,6 +94,17 @@ export class ToolRegistry {
 
   getAll(): ToolDefinition[] {
     return Array.from(this.tools.values());
+  }
+
+  activate(...names: string[]): void {
+    for (const name of names) {
+      if (this.tools.has(name)) this.activated.add(name);
+    }
+  }
+
+  // 未激活的 deferred 工具 —— tool_search 的搜索范围。
+  getDeferred(): ToolDefinition[] {
+    return this.getAll().filter(t => t.deferred && !this.activated.has(t.name));
   }
 
   // 共享锁：有独占锁时挂起，否则直接 concurrentCount++
@@ -126,6 +147,8 @@ export class ToolRegistry {
   toAISDKFormat(): Record<string, any> {
     const result: Record<string, any> = {};
     for (const [name, tool] of this.tools) {
+      // 未激活的 deferred 工具对模型不可见 —— 这就是「延迟加载」的全部机制。
+      if (tool.deferred && !this.activated.has(name)) continue;
       const maxChars = tool.maxResultChars;
       const executeFn = tool.execute;
       const isSafe = tool.isConcurrencySafe === true;

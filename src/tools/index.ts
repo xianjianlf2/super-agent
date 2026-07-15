@@ -8,6 +8,7 @@ export type { ToolDefinition } from './registry';
 export { truncateResult } from './registry';
 export { MCPClient, MockMCPClient } from './mcp-client';
 export type { IMCPClient, MCPTool } from './mcp-client';
+export { createToolSearchTool } from './tool-search';
 
 export const allTools = [
   weatherTool, calculatorTool, fetchUrlTool, startPreviewTool, readFileTool, writeFileTool, editFileTool, globTool, searchFilesTool, grepFilesTool, listDirectoryTool, bashTool,
