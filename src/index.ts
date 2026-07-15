@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import * as readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { createLineReader } from './line-reader';
 import { type ModelMessage } from 'ai';
 import { model, useReal } from './model';
 import { ToolRegistry, allTools, MCPClient, MockMCPClient } from './tools';
@@ -70,13 +70,15 @@ async function main() {
   await connectMCP();
   printTools();
 
-  const rl = readline.createInterface({ input: stdin, output: stdout });
+  // 用带缓冲的 line reader 替代 rl.question：管道输入多个问题时后续行不会丢，
+  // 支持 printf 'q1\nq2\nexit\n' | pnpm start 这样的多轮测试。
+  const rl = createLineReader(stdin, stdout);
 
   console.log(`\nSuper Agent v0.5 — MCP 接入（输入 exit 退出）  [${useReal ? '真实 Qwen' : 'Mock'}]\n`);
   console.log('试试："查看 vercel/ai 的 issues"、"帮我列一下当前目录的文件"、"北京天气"\n');
 
   while (true) {
-    const input = (await rl.question('\nYou: ').catch(() => null))?.trim();
+    const input = (await rl.question('\nYou: '))?.trim();
     if (input == null || input === 'exit' || input === 'quit') {
       console.log('Bye!');
       break;

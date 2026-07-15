@@ -37,6 +37,7 @@ pnpm test       # 运行单元测试
 ```
 src/
   index.ts            # CLI 对话主程序
+  line-reader.ts      # 带缓冲的输入读取（管道多轮输入不丢行）
   model.ts            # 统一创建模型（真实 Qwen / 本地 mock）
   mock-model.ts       # 本地模拟模型，无 Key 也能跑
   agent-loop.ts       # Agent 主循环（三层防护）

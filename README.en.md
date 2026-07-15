@@ -37,6 +37,7 @@ pnpm test       # run unit tests
 ```
 src/
   index.ts            # CLI chat entry point
+  line-reader.ts      # buffered input reader (piped multi-turn input keeps every line)
   model.ts            # creates the model (real Qwen or local mock)
   mock-model.ts       # local mock model, works without an API key
   agent-loop.ts       # agent main loop (three-layer guard)
