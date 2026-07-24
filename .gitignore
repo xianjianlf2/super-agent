@@ -15,6 +15,9 @@ build/
 npm-debug.log*
 pnpm-debug.log*
 
+# Local chat sessions
+.sessions/
+
 # OS / editor
 .DS_Store
 .idea/

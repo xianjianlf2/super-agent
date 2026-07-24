@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ToolRegistry, type ToolDefinition } from './registry';
-import { createToolSearchTool } from './tool-search';
+import { createToolSearchTool } from './search-tools';
 
 const makeTool = (name: string, description: string, deferred = true): ToolDefinition => ({
   name,

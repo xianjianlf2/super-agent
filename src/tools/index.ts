@@ -1,14 +1,14 @@
 import { ToolRegistry } from './registry';
 import { weatherTool, calculatorTool, fetchUrlTool, startPreviewTool } from './utility-tools';
 import { readFileTool, writeFileTool, editFileTool, globTool, searchFilesTool, grepFilesTool, listDirectoryTool } from './file-tools';
-import { bashTool } from './bash-tools';
+import { bashTool } from './shell-tools';
 
 export { ToolRegistry } from './registry';
 export type { ToolDefinition } from './registry';
 export { truncateResult } from './registry';
 export { MCPClient, MockMCPClient } from './mcp-client';
 export type { IMCPClient, MCPTool } from './mcp-client';
-export { createToolSearchTool } from './tool-search';
+export { createToolSearchTool } from './search-tools';
 
 export const allTools = [
   weatherTool, calculatorTool, fetchUrlTool, startPreviewTool, readFileTool, writeFileTool, editFileTool, globTool, searchFilesTool, grepFilesTool, listDirectoryTool, bashTool,

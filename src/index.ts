@@ -1,20 +1,53 @@
 import 'dotenv/config';
-import { stdin, stdout } from 'node:process';
+import { argv, stdin, stdout } from 'node:process';
 import { createLineReader } from './line-reader';
 import { type ModelMessage } from 'ai';
 import { model, useReal } from './model';
 import { ToolRegistry, allTools, MCPClient, MockMCPClient, createToolSearchTool } from './tools';
-import { agentLoop, type BudgetState } from './agent-loop';
+import { agentLoop, type BudgetState } from './agent/loop';
+import { JsonlSessionStore } from './session-store';
+import { createPromptBuilder, type PromptPipe } from './prompt-builder';
 
-const SYSTEM = `你是 Super Agent，一个有工具调用能力的 AI 助手。
-需要查询信息时，主动使用工具，不要编造数据。
-部分工具（如 GitHub 相关）是延迟加载的，不在你当前的工具表里：
-需要时先用 tool_search 按关键词搜索，激活后即可直接调用。
-回答要简洁直接。`;
+interface RuntimePromptContext {
+  deferredToolCount: number;
+  sessionMessageCount: number;
+}
+
+const identityPipe = (): PromptPipe<RuntimePromptContext> => () =>
+  '你是 Super Agent，一个有工具调用能力的 AI 助手。';
+
+const toolUsePipe = (): PromptPipe<RuntimePromptContext> => () =>
+  '需要查询信息时，主动使用工具，不要编造数据。';
+
+const toolSearchPipe = (): PromptPipe<RuntimePromptContext> => (ctx) =>
+  ctx.deferredToolCount > 0
+    ? `部分工具（如 GitHub 相关）是延迟加载的，不在你当前的工具表里：
+需要时先用 tool_search 按关键词搜索，激活后即可直接调用。`
+    : null;
+
+const sessionContextPipe = (): PromptPipe<RuntimePromptContext> => (ctx) =>
+  ctx.sessionMessageCount > 0
+    ? `当前是恢复的历史会话，已加载 ${ctx.sessionMessageCount} 条历史消息作为上下文。`
+    : null;
+
+const answerStylePipe = (): PromptPipe<RuntimePromptContext> => () =>
+  '回答要简洁直接。';
+
+const promptBuilder = createPromptBuilder<RuntimePromptContext>()
+  .pipe('coreRules', identityPipe())
+  .pipe('toolGuide', toolUsePipe())
+  .pipe('deferredTools', toolSearchPipe())
+  .pipe('answerStyle', answerStylePipe())
+  .pipe('sessionContext', sessionContextPipe());
 
 const budget: BudgetState = { used: 0, limit: 40000 };
 
-const messages: ModelMessage[] = [];
+const sessionStore = new JsonlSessionStore();
+const shouldContinue = argv.includes('--continue');
+const shouldDebugPrompt = argv.includes('--debug-prompt');
+const messages: ModelMessage[] =
+  shouldContinue && sessionStore.exists() ? sessionStore.load() : [];
+const sessionMessageCount = messages.length;
 
 // 创建 registry 并注册所有工具。tool_search 元工具负责按需激活 deferred 工具。
 const registry = new ToolRegistry();
@@ -82,6 +115,9 @@ async function main() {
   const rl = createLineReader(stdin, stdout);
 
   console.log(`\nSuper Agent v0.6 — ToolSearch 延迟加载（输入 exit 退出）  [${useReal ? '真实 Qwen' : 'Mock'}]\n`);
+  if (shouldContinue && messages.length > 0) {
+    console.log(`已从 ${sessionStore.filePath} 恢复 ${messages.length} 条历史消息\n`);
+  }
   console.log('试试："查看 vercel/ai 的 issues"、"帮我列一下当前目录的文件"、"北京天气"\n');
 
   while (true) {
@@ -92,8 +128,24 @@ async function main() {
     }
     if (!input) continue;
 
-    messages.push({ role: 'user', content: input });
-    await agentLoop(model, registry, messages, SYSTEM, budget);
+    const userMessage: ModelMessage = { role: 'user', content: input };
+    messages.push(userMessage);
+    sessionStore.append(userMessage);
+
+    const persistedCount = messages.length;
+    const promptContext = {
+      deferredToolCount: registry.getDeferred().length,
+      sessionMessageCount,
+    };
+    const promptResult = promptBuilder.render(promptContext);
+    if (shouldDebugPrompt) {
+      console.log(`\n${promptResult.debug}\n`);
+    }
+    const system = promptResult.prompt;
+    await agentLoop(model, registry, messages, system, budget);
+    for (const message of messages.slice(persistedCount)) {
+      sessionStore.append(message);
+    }
   }
 
   rl.close();

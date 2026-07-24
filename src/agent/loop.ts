@@ -1,7 +1,7 @@
 import { streamText, type ModelMessage } from 'ai';
 import { detect, recordCall, recordResult, resetHistory } from './loop-detection';
 import { isRetryable, calculateDelay, sleep } from './retry';
-import type { ToolRegistry } from './tools';
+import type { ToolRegistry } from '../tools';
 
 const MAX_STEPS = 15;   // 代码层的硬上限：兜住 while(true) 这种纯结构性死循环
 const MAX_RETRIES = 3;  // 单步最多重试次数

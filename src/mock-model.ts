@@ -184,7 +184,7 @@ export function createMockModel() {
     },
 
     async doStream({ prompt }: any) {
-      // plan 可能直接抛 429（测试重试），交给 agent-loop 的重试逻辑处理
+      // plan 可能直接抛 429（测试重试），交给 agent loop 的重试逻辑处理
       return plan(prompt);
     },
   };

@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, openSync, readSync, closeSync } from 'node:fs';
-import { glob } from 'node:fs/promises';
 import { join, resolve, relative } from 'node:path';
 import type { ToolDefinition } from './registry';
 
@@ -94,10 +93,7 @@ export const globTool: ToolDefinition = {
   isConcurrencySafe: true,
   isReadOnly: true,
   execute: async ({ pattern, cwd = '.' }: { pattern: string; cwd?: string }) => {
-    const matches: string[] = [];
-    for await (const file of glob(pattern, { cwd: resolve(cwd) })) {
-      matches.push(file);
-    }
+    const matches = globFiles(pattern, resolve(cwd));
     if (matches.length === 0) return '无匹配文件';
     return matches.sort().join('\n');
   },
@@ -128,6 +124,42 @@ function walkFiles(dir: string, skip: Set<string> = SKIP_DIRS): string[] {
     const full = join(dir, name);
     return statSync(full).isDirectory() ? walkFiles(full, skip) : [full];
   });
+}
+
+function globToRegExp(pattern: string): RegExp {
+  let source = '^';
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    const next = pattern[i + 1];
+    if (ch === '*') {
+      if (next === '*') {
+        const after = pattern[i + 2];
+        if (after === '/') {
+          source += '(?:.*/)?';
+          i += 2;
+        } else {
+          source += '.*';
+          i++;
+        }
+      } else {
+        source += '[^/]*';
+      }
+      continue;
+    }
+    if (ch === '?') {
+      source += '[^/]';
+      continue;
+    }
+    source += ch.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+  }
+  return new RegExp(`${source}$`);
+}
+
+function globFiles(pattern: string, root: string): string[] {
+  const matcher = globToRegExp(pattern.replace(/\\/g, '/'));
+  return walkFiles(root, buildSkipSet(root))
+    .map(f => relative(root, f).replace(/\\/g, '/'))
+    .filter(f => matcher.test(f));
 }
 
 export const searchFilesTool: ToolDefinition = {
@@ -195,8 +227,7 @@ export const grepFilesTool: ToolDefinition = {
 
     let files: string[];
     if (include) {
-      files = [];
-      for await (const f of glob(include, { cwd: root })) files.push(join(root, f));
+      files = globFiles(include, root).map(f => join(root, f));
     } else {
       files = walkFiles(root, buildSkipSet(root));
     }

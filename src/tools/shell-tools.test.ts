@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bashTool } from './bash-tools';
+import { bashTool } from './shell-tools';
 
 describe('bashTool 正常执行', () => {
   it('返回命令输出', async () => {
