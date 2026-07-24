@@ -13,6 +13,8 @@ pnpm install
 echo "DASHSCOPE_API_KEY=sk-xxx" > .env   # 不填则用本地 mock 模型
 
 pnpm start      # 启动对话
+pnpm continue   # 恢复 .sessions/default.jsonl 里的历史会话
+pnpm start -- --debug-prompt  # 查看 Prompt Pipe 开关和字符数
 pnpm compare    # 自动循环 vs 手动循环对比 demo
 pnpm test       # 运行单元测试
 ```
@@ -30,8 +32,36 @@ pnpm test       # 运行单元测试
 | 第 7 章 | 三个实战 demo | `fetch_url` + `start_preview`，用现有工具组装代码分析 / Research / Vibe Coding | `a3408ca` |
 | 第 8 章 | MCP 接入 | 手写 MCP Client（JSON-RPC over stdio）接入 GitHub，命名空间隔离 + 三层降级 | `66dff00` |
 | 第 9 章 | ToolSearch 延迟加载 | `tool_search` 元工具按需激活 MCP 工具 schema，初始 prompt 省 73% token | `0812f90` |
+| 第 10 章 | Session + Prompt Pipe | JSONL 持久化历史会话，Prompt Pipe 模块化 system prompt，支持 debug 可视化 | `b379d20` |
 
 > 核心理解：模型本身无状态，只负责"决定调用哪个工具"；记忆 = 每次重发完整历史，执行 = 你代码里的 `execute`，循环 = 你写的 `while`。
+
+## Prompt Pipe
+
+System prompt 通过 `PromptBuilder` 链式组装：
+
+```ts
+const promptBuilder = createPromptBuilder<RuntimePromptContext>()
+  .pipe('coreRules', identityPipe())
+  .pipe('toolGuide', toolUsePipe())
+  .pipe('deferredTools', toolSearchPipe())
+  .pipe('answerStyle', answerStylePipe())
+  .pipe('sessionContext', sessionContextPipe());
+```
+
+约定是**先静后动**：稳定规则放前面，`sessionContext`、memory、RAG 这类动态内容放后面，尽量保住前缀 KV Cache。
+
+`--debug-prompt` 会打印每个 Pipe 的开关和字符数：
+
+```text
+=== Prompt Pipe Debug ===
+  coreRules: [ON] 32 chars
+  toolGuide: [ON] 22 chars
+  deferredTools: [ON] 71 chars
+  answerStyle: [ON] 8 chars
+  sessionContext: [OFF]
+========================
+```
 
 ## 项目结构
 
@@ -41,18 +71,21 @@ src/
   line-reader.ts      # 带缓冲的输入读取（管道多轮输入不丢行）
   model.ts            # 统一创建模型（真实 Qwen / 本地 mock）
   mock-model.ts       # 本地模拟模型，无 Key 也能跑
-  agent-loop.ts       # Agent 主循环（三层防护）
-  loop-detection.ts   # 循环检测（重复调用 / 参数震荡）
-  retry.ts            # 重试策略与退避延迟
+  prompt-builder.ts   # Prompt Pipe 组装、渲染和 debug
+  session-store.ts    # JSONL 会话持久化
   compare-loops.ts    # 自动 vs 手动循环对比 demo
+  agent/
+    loop.ts               # Agent 主循环（三层防护）
+    loop-detection.ts     # 循环检测（重复调用 / 参数震荡）
+    retry.ts              # 重试策略与退避延迟
   tools/
     index.ts              # 汇总导出 + allTools 注册
     registry.ts           # ToolRegistry + 读写锁 + 结果截断 + MCP Server 注册
     mcp-client.ts         # MCP Client（JSON-RPC over stdio）+ Mock 降级
-    tool-search.ts        # tool_search 元工具：搜索并激活延迟加载的工具
+    search-tools.ts       # tool_search 元工具：搜索并激活延迟加载的工具
     utility-tools.ts      # weather / calculator / fetch_url / start_preview
     file-tools.ts         # read_file / write_file / edit_file / glob / grep / list_directory
-    bash-tools.ts         # bash 命令执行
+    shell-tools.ts        # bash 命令执行
     *.test.ts             # Vitest 单元测试
 app/                  # 第 7 章旗舰 demo：浏览器直跑 TSX（start_preview 默认服务）
 demos/                # 另外两个网页 demo 样例（vibe-todo / landing）
