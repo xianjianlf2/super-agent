@@ -2,11 +2,14 @@ import 'dotenv/config';
 import { argv, stdin, stdout } from 'node:process';
 import { createLineReader } from './line-reader';
 import { type ModelMessage } from 'ai';
-import { model, useReal } from './model';
+import { compressionModel, model, useReal } from './model';
 import { ToolRegistry, allTools, MCPClient, MockMCPClient, createToolSearchTool } from './tools';
 import { agentLoop, type BudgetState } from './agent/loop';
 import { JsonlSessionStore } from './session-store';
 import { createPromptBuilder, type PromptPipe } from './prompt-builder';
+import { microcompactToolResults } from './agent/microcompact';
+import { summaryCompactMessages } from './agent/summary-compact';
+import { estimateCharsAsTokens, estimateMessagesTokens } from './agent/token-estimate';
 
 interface RuntimePromptContext {
   deferredToolCount: number;
@@ -41,13 +44,18 @@ const promptBuilder = createPromptBuilder<RuntimePromptContext>()
   .pipe('sessionContext', sessionContextPipe());
 
 const budget: BudgetState = { used: 0, limit: 40000 };
+const MAX_SUMMARY_FAILURES = 3;
+const summaryState = { consecutiveFailures: 0, disabled: false };
 
 const sessionStore = new JsonlSessionStore();
 const shouldContinue = argv.includes('--continue');
 const shouldDebugPrompt = argv.includes('--debug-prompt');
+const shouldDebugCompaction = argv.includes('--debug-compaction');
+const shouldVerbose = argv.includes('--verbose');
 const messages: ModelMessage[] =
   shouldContinue && sessionStore.exists() ? sessionStore.load() : [];
 const sessionMessageCount = messages.length;
+
 
 // 创建 registry 并注册所有工具。tool_search 元工具负责按需激活 deferred 工具。
 const registry = new ToolRegistry();
@@ -68,7 +76,7 @@ async function connectMCP() {
   }
 
   if (githubToken && canSpawn) {
-    console.log('\n连接 GitHub MCP Server...');
+    if (shouldVerbose) console.log('\n连接 GitHub MCP Server...');
     try {
       const client = new MCPClient(
         'npx', ['-y', '@modelcontextprotocol/server-github'],
@@ -76,21 +84,31 @@ async function connectMCP() {
       );
       // MCP 工具长尾且 schema 肥，标为 deferred：不进初始工具表，经 tool_search 按需激活。
       const tools = await registry.registerMCPServer('github', client, { deferred: true });
-      console.log(`  已注册 ${tools.length} 个 MCP 工具（延迟加载）`);
+      if (shouldVerbose) console.log(`  已注册 ${tools.length} 个 MCP 工具（延迟加载）`);
       return;
     } catch (err) {
-      console.log(`  MCP 连接失败: ${err instanceof Error ? err.message : err}`);
-      console.log('  降级为 Mock MCP...');
+      if (shouldVerbose) {
+        console.log(`  MCP 连接失败: ${err instanceof Error ? err.message : err}`);
+        console.log('  降级为 Mock MCP...');
+      }
     }
   }
 
-  if (!githubToken) {
+  if (!githubToken && shouldVerbose) {
     console.log('\n未配置 GITHUB_PERSONAL_ACCESS_TOKEN，使用 Mock MCP');
   }
 
   const mockClient = new MockMCPClient();
   const tools = await registry.registerMCPServer('github', mockClient, { deferred: true });
-  console.log(`  已注册 ${tools.length} 个 Mock MCP 工具（延迟加载）`);
+  if (shouldVerbose) console.log(`  已注册 ${tools.length} 个 Mock MCP 工具（延迟加载）`);
+}
+
+function summaryPreview(): string | null {
+  const first = messages[0];
+  if (first?.role !== 'user' || typeof first.content !== 'string') return null;
+  if (!first.content.startsWith('[上下文摘要]\n')) return null;
+  const summary = first.content.slice('[上下文摘要]\n'.length);
+  return summary.length > 220 ? `${summary.slice(0, 220)}...` : summary;
 }
 
 function printTools() {
@@ -106,9 +124,73 @@ function printTools() {
   }
 }
 
+async function compactContext(reason: string) {
+  const beforeCount = messages.length;
+  const beforeTokens = estimateMessagesTokens(messages);
+  if (shouldDebugCompaction) console.log(`[压缩前] ${beforeCount} 条消息, ~${beforeTokens} tokens`);
+
+  const microStats = microcompactToolResults(messages);
+  if (microStats.cleared > 0 && shouldDebugCompaction) {
+    console.log(
+      `[Layer 1: Microcompact] 清理了 ${microStats.cleared} 个工具结果, ~${estimateCharsAsTokens(microStats.savedChars)} tokens`,
+    );
+  }
+
+  if (summaryState.disabled) {
+    if (shouldDebugCompaction) {
+      console.log(`[Layer 2: Summarization] 已跳过：连续失败 ${MAX_SUMMARY_FAILURES} 次后暂停压缩`);
+      console.log(`[压缩后] ${messages.length} 条消息, ~${estimateMessagesTokens(messages)} tokens`);
+    }
+    return;
+  }
+
+  try {
+    const summaryStats = await summaryCompactMessages(compressionModel, messages, budget);
+    if (summaryStats.triggered) {
+      summaryState.consecutiveFailures = 0;
+      if (shouldDebugCompaction) {
+        console.log(
+          `[Layer 2: Summarization] 压缩了 ${summaryStats.compactedMessages} 条消息, ~${estimateCharsAsTokens(summaryStats.savedChars)} tokens`,
+        );
+        const preview = summaryPreview();
+        if (preview) console.log(`[摘要预览] ${preview}`);
+      }
+    } else if (
+      summaryStats.reason === 'invalid_summary_format' ||
+      summaryStats.reason === 'summarize_failed'
+    ) {
+      summaryState.consecutiveFailures++;
+      if (shouldDebugCompaction) {
+        console.log(
+          `[Layer 2: Summarization] 跳过：${summaryStats.reason}（连续失败 ${summaryState.consecutiveFailures}/${MAX_SUMMARY_FAILURES}）`,
+        );
+      }
+      if (summaryState.consecutiveFailures >= MAX_SUMMARY_FAILURES) {
+        summaryState.disabled = true;
+        if (shouldDebugCompaction) console.log(`[Layer 2: Summarization] 连续失败 ${MAX_SUMMARY_FAILURES} 次，后续不再尝试摘要压缩`);
+      }
+    } else if (summaryStats.reason !== 'below_threshold' && shouldDebugCompaction) {
+      console.log(`[Layer 2: Summarization] 跳过：${summaryStats.reason}`);
+    }
+  } catch (error) {
+    summaryState.consecutiveFailures++;
+    if (shouldDebugCompaction) {
+      console.log(
+        `  [${reason} SummaryCompact] 跳过：${error instanceof Error ? error.message : error}（连续失败 ${summaryState.consecutiveFailures}/${MAX_SUMMARY_FAILURES}）`,
+      );
+    }
+    if (summaryState.consecutiveFailures >= MAX_SUMMARY_FAILURES) {
+      summaryState.disabled = true;
+      if (shouldDebugCompaction) console.log(`[Layer 2: Summarization] 连续失败 ${MAX_SUMMARY_FAILURES} 次，后续不再尝试摘要压缩`);
+    }
+  }
+
+  if (shouldDebugCompaction) console.log(`[压缩后] ${messages.length} 条消息, ~${estimateMessagesTokens(messages)} tokens`);
+}
+
 async function main() {
   await connectMCP();
-  printTools();
+  if (shouldVerbose) printTools();
 
   // 用带缓冲的 line reader 替代 rl.question：管道输入多个问题时后续行不会丢，
   // 支持 printf 'q1\nq2\nexit\n' | pnpm start 这样的多轮测试。
@@ -117,6 +199,7 @@ async function main() {
   console.log(`\nSuper Agent v0.6 — ToolSearch 延迟加载（输入 exit 退出）  [${useReal ? '真实 Qwen' : 'Mock'}]\n`);
   if (shouldContinue && messages.length > 0) {
     console.log(`已从 ${sessionStore.filePath} 恢复 ${messages.length} 条历史消息\n`);
+    await compactContext('启动');
   }
   console.log('试试："查看 vercel/ai 的 issues"、"帮我列一下当前目录的文件"、"北京天气"\n');
 
@@ -132,7 +215,6 @@ async function main() {
     messages.push(userMessage);
     sessionStore.append(userMessage);
 
-    const persistedCount = messages.length;
     const promptContext = {
       deferredToolCount: registry.getDeferred().length,
       sessionMessageCount,
@@ -142,10 +224,13 @@ async function main() {
       console.log(`\n${promptResult.debug}\n`);
     }
     const system = promptResult.prompt;
-    await agentLoop(model, registry, messages, system, budget);
-    for (const message of messages.slice(persistedCount)) {
+    const loopResult = await agentLoop(model, registry, messages, system, budget, {
+      verbose: shouldVerbose,
+    });
+    for (const message of loopResult.newMessages) {
       sessionStore.append(message);
     }
+    await compactContext('轮次结束');
   }
 
   rl.close();

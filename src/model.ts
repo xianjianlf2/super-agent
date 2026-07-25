@@ -11,3 +11,6 @@ const qwen = createOpenAI({
 // 填了 DASHSCOPE_API_KEY 用真实 Qwen，否则用本地 mock 模型
 export const useReal = !!process.env.DASHSCOPE_API_KEY;
 export const model = useReal ? qwen.chat('qwen-plus-latest') : createMockModel();
+export const compressionModel = useReal
+  ? qwen.chat(process.env.COMPRESSION_MODEL ?? 'qwen-plus-latest')
+  : createMockModel();
