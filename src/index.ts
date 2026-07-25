@@ -52,10 +52,66 @@ const shouldContinue = argv.includes('--continue');
 const shouldDebugPrompt = argv.includes('--debug-prompt');
 const shouldDebugCompaction = argv.includes('--debug-compaction');
 const shouldVerbose = argv.includes('--verbose');
+const shouldDemoCompaction = argv.includes('--demo-compaction');
 const messages: ModelMessage[] =
   shouldContinue && sessionStore.exists() ? sessionStore.load() : [];
 const sessionMessageCount = messages.length;
 
+function toolCallMessage(toolCallId: string, toolName: string, input: unknown): ModelMessage {
+  return {
+    role: 'assistant',
+    content: [{ type: 'tool-call', toolCallId, toolName, input }],
+  };
+}
+
+function toolResultMessage(toolCallId: string, toolName: string, value: string): ModelMessage {
+  return {
+    role: 'tool',
+    content: [{ type: 'tool-result', toolCallId, toolName, output: { type: 'text', value } }],
+  };
+}
+
+function createDemoHistory(): ModelMessage[] {
+  const largeDirectoryListing = [
+    '[FILE] .env',
+    '[FILE] package.json',
+    '[FILE] pnpm-lock.yaml',
+    '[FILE] README.md',
+    '[FILE] sample-data.txt',
+    '[DIR] src',
+    '[DIR] src/agent',
+    '[DIR] src/tools',
+    '[DIR] demos',
+    '[DIR] app',
+    '[DIR] sample-project',
+  ].join('\n') + '\n' + '历史目录输出，用于演示 Microcompact 清理旧工具结果。\n'.repeat(80);
+
+  return [
+    { role: 'user', content: '先列出当前目录，看看这个项目里有什么。' },
+    toolCallMessage('demo-call-1', 'list_directory', { path: '.' }),
+    toolResultMessage('demo-call-1', 'list_directory', largeDirectoryListing),
+    { role: 'assistant', content: '当前目录包含 `.env`、`package.json`、`sample-data.txt`、`src/` 等文件和目录。' },
+
+    { role: 'user', content: '读取 `package.json`，确认项目名和脚本。' },
+    toolCallMessage('demo-call-2', 'read_file', { path: 'package.json' }),
+    toolResultMessage('demo-call-2', 'read_file', '{\n  "name": "super-agent-08-compaction",\n  "scripts": {\n    "start": "tsx src/index.ts",\n    "test": "vitest run"\n  }\n}'),
+    { role: 'assistant', content: '`package.json` 显示项目名是 `super-agent-08-compaction`，启动脚本是 `pnpm start`。' },
+
+    { role: 'user', content: '搜索 `ToolRegistry` 在哪里实现。' },
+    toolCallMessage('demo-call-3', 'grep_files', { keyword: 'ToolRegistry', cwd: 'src' }),
+    toolResultMessage('demo-call-3', 'grep_files', 'tools/registry.ts:22:export class ToolRegistry {\ntools/index.ts:1:import { ToolRegistry } from "./registry";'),
+    { role: 'assistant', content: '`ToolRegistry` 主要在 `src/tools/registry.ts` 中实现。' },
+
+    { role: 'user', content: '读取 `src/tools/registry.ts` 的核心逻辑。' },
+    toolCallMessage('demo-call-4', 'read_file', { path: 'src/tools/registry.ts', start_line: 20, end_line: 80 }),
+    toolResultMessage('demo-call-4', 'read_file', 'export class ToolRegistry {\n  private tools = new Map<string, ToolDefinition>();\n  register(...tools: ToolDefinition[]): void { ... }\n  toAISDKFormat(): Record<string, any> { ... }\n}'),
+    { role: 'assistant', content: '`ToolRegistry` 负责注册工具、激活 deferred 工具，并转换成 AI SDK 工具格式。' },
+  ];
+}
+
+if (shouldDemoCompaction && !shouldContinue && messages.length === 0) {
+  messages.push(...createDemoHistory());
+}
 
 // 创建 registry 并注册所有工具。tool_search 元工具负责按需激活 deferred 工具。
 const registry = new ToolRegistry();
@@ -199,6 +255,9 @@ async function main() {
   console.log(`\nSuper Agent v0.6 — ToolSearch 延迟加载（输入 exit 退出）  [${useReal ? '真实 Qwen' : 'Mock'}]\n`);
   if (shouldContinue && messages.length > 0) {
     console.log(`已从 ${sessionStore.filePath} 恢复 ${messages.length} 条历史消息\n`);
+    await compactContext('启动');
+  } else if (shouldDemoCompaction) {
+    console.log(`[Session] 新会话（已注入 ${messages.length} 条模拟历史）\n`);
     await compactContext('启动');
   }
   console.log('试试："查看 vercel/ai 的 issues"、"帮我列一下当前目录的文件"、"北京天气"\n');

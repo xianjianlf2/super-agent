@@ -26,6 +26,29 @@ const RESPONSES: Record<string, string> = {
   intro: '我是通义千问（模拟版），在本地模拟回复，机制和真实 API 完全一致。',
 };
 
+const COMPRESS_RESPONSE = `## 用户意图
+用户在探索项目结构和代码，了解工具系统的设计。
+
+## 已完成的操作
+- 列出了当前目录文件：\`.env\`、\`package.json\`、\`sample-data.txt\`、\`src/\`
+- 读取了 \`package.json\`，确认项目名为 \`super-agent-08-compaction\`
+- 搜索了 \`ToolRegistry\` 相关实现
+- 读取了 \`src/tools/registry.ts\` 的关键逻辑
+
+## 关键发现
+- 工具通过 \`ToolRegistry\` 统一注册，并转换成 AI SDK 格式
+- 工具结果需要按 AI SDK 的 \`tool-result\` 结构保存
+- \`read_file\`、\`bash\`、\`grep_files\` 属于可清理的查询类工具
+
+## 当前状态
+已经完成早期项目结构探索，后续可以继续基于保留的最近工具结果分析。
+
+## 需要保留的细节
+- \`package.json\`
+- \`src/tools/registry.ts\`
+- \`ToolRegistry\`
+- \`super-agent-08-compaction\``;
+
 // --- 从 prompt 里抽取信息 ---
 
 function userTexts(prompt: any[]): string[] {
@@ -175,8 +198,18 @@ export function createMockModel() {
     },
 
     async doGenerate({ prompt }: any) {
+      const text = userTexts(prompt).join(' ');
+      if (text.includes('[#') && text.includes('tool-result')) {
+        return {
+          content: [{ type: 'text' as const, text: COMPRESS_RESPONSE }],
+          finishReason: { unified: 'stop' as const, raw: undefined },
+          usage: SMALL_USAGE,
+          warnings: [],
+        };
+      }
+
       return {
-        content: [{ type: 'text' as const, text: pickDefault(userTexts(prompt).join(' ')) }],
+        content: [{ type: 'text' as const, text: pickDefault(text) }],
         finishReason: { unified: 'stop' as const, raw: undefined },
         usage: SMALL_USAGE,
         warnings: [],
